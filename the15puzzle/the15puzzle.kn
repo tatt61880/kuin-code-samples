@@ -1,0 +1,250 @@
+{
+	15パズル for Kuin 1.2
+	作成:
+		Tatt (@tatt61880)
+		https://twitter.com/tatt61880
+}
+
+enum Mode
+	normal
+	hard
+	veryHard
+end enum
+const mode: @Mode :: %veryHard
+
+const pieceSize: int :: 120
+const shuffleNum: int :: 1000
+const slowRate: int :: 1
+const pixelPerFrame: int :: @pieceSize / (5 * @slowRate)
+const imageFilename: []char :: "res/the15puzzle.png"
+const completeFilename: []char :: "res/complete.png"
+const imageSize: float :: 400.0
+const windowWidth: int :: @pieceSize * 8 + 10
+const windowHeight: int :: @pieceSize * 4 + 50
+
+var image: draw@Tex
+var completeImage: draw@Tex
+const completeImageWidth: float :: 400.0
+const completeImageHeight: float :: 400.0
+var cnt: int
+
+func main()
+	assert @pieceSize % @pixelPerFrame = 0 {この条件が満たされている前提で駒の移動処理を行います}
+	var wndMain: wnd@Wnd :: wnd@makeWnd(null, %aspect, @windowWidth, @windowHeight, "THE 15 PUZZLE")
+	var drawMain: wnd@Draw :: wnd@makeDraw(wndMain, 0, 0, @windowWidth, @windowHeight, %scale, %scale, false)
+	{画像の初期化}
+	do @image :: draw@makeTex(@imageFilename)
+	assert @image <>& null
+	do @completeImage :: draw@makeTex(@completeFilename)
+	assert @completeImage <>& null
+	
+	{駒の初期化}
+	do @pieces :: #[16]@Piece
+	for i(0, 15)
+		do @pieces[i] :: (#@Piece).init(i)
+	end for
+	do @voidPiece :: @pieces[15]
+	do @shufflePieces()
+	
+	var font: draw@Font :: draw@makeFont("Meiryo", 26, false, false, true, 0.0)
+	while a(wnd@act())
+		do draw@render(60)
+		do font.draw(0.0, @pieceSize $ float * 4.0, "   停止した瞬間に1～15が並んでいるようにしてください。", 0xFFFFFFFF)
+		
+		{見本}
+		do @image.drawScale(
+		|@pieceSize $ float * 4.0 + 10.0, 0.0,
+		|@pieceSize $ float * 4.0,
+		|@pieceSize $ float * 4.0,
+		|0.0,
+		|0.0,
+		|@imageSize,
+		|@imageSize,
+		|0xFFFFFFFF
+		|)
+		if(@mode = %hard | @mode = %veryHard)
+			do @cnt :+ 1
+		end if
+		do drawPieces()
+		if(false)
+			if(@checkComplete())
+				do @completeImage.draw(
+				|@windowWidth $ float / 2.0 - @completeImageWidth / 2.0,
+				|@windowHeight $ float / 2.0 - @completeImageHeight / 2.0,
+				|0.0, 0.0,
+				|@completeImageWidth, @completeImageHeight,
+				|0xFFFFFFFF
+				|)
+			end if
+		end if
+		for i(0, ^@pieces - 1) {移動アニメーション用のループです}
+			var p: @Piece :: @pieces[i]
+			if(p.dir <> %stay)
+				do p.move(@pixelPerFrame)
+				skip a {移動中にマウス入力を受け付けないように、ここでwhileループの先頭に戻ります}
+			end if
+		end for
+		
+		do @setDirection(false)
+		if(input@pad(0, %a) > 30)
+			do @shufflePieces()
+		end if
+	end while
+	
+	func drawPieces()
+		for i(0, ^@pieces - 1)
+			var p: @Piece :: @pieces[i]
+			if(p <>& @voidPiece)
+				do p.draw()
+			end if
+		end for
+	end func
+end func
+
+var pieces: []@Piece
+var voidPiece: @Piece
+
+class Piece()
+	var id: int
+	var num: int
+	var font: []char
+	+var posId: int
+	+var pos: Pos
+	+var dir: @Dir
+	
+	+func init(id: int): @Piece
+		do me.id :: id
+		do me.num :: id + 1
+		do me.font :: me.num.toStr()
+		do me.posId :: id
+		do me.pos :: (#Pos).init(me.posId)
+		do me.dir :: %stay
+		ret me
+	end func
+	
+	+func getId(): int
+		ret me.id
+	end func
+	
+	+func move(pixelPerFrame: int)
+		if(me.dir = %left)
+			do me.pos.x :- pixelPerFrame
+		elif(me.dir = %right)
+			do me.pos.x :+ pixelPerFrame
+		elif(me.dir = %up)
+			do me.pos.y :- pixelPerFrame
+		elif(me.dir = %down)
+			do me.pos.y :+ pixelPerFrame
+		end if
+		if(me.pos.x % @pieceSize = 0 & me.pos.y % @pieceSize = 0)
+			do me.dir :: %stay
+		end if
+	end func
+	
+	+func draw()
+		var f: float :: @cnt $ float / @slowRate $ float
+		do @image.drawScale(
+		|me.pos.x $ float,
+		|me.pos.y $ float,
+		|@pieceSize $ float,
+		|@pieceSize $ float,
+		|(0.25 * @imageSize * (f / 60.0 - lib@sin(2.0 * lib@pi * f / 60.0) / (2.0 * lib@pi)) + (me.id % 4) $ float * @imageSize * 0.25) % @imageSize,
+		|((@mode = %veryHard ?(0.25 * @imageSize * (f / 45.0 - lib@sin(2.0 * lib@pi * f / 45.0) / (2.0 * lib@pi)), 0.0)) + (me.id / 4) $ float * @imageSize * 0.25) % @imageSize,
+		|@imageSize * 0.25,
+		|@imageSize * 0.25,
+		|0xFFFFFFFF
+		|)
+	end func
+	
+	class Pos()
+		+var x: int
+		+var y: int
+		+func init(posId: int): Pos
+			do me.x :: @pieceSize * (posId % 4)
+			do me.y :: @pieceSize * (posId / 4)
+			ret me
+		end func
+	end class
+end class
+
+func setDirection(shuffleMode: bool)
+	var dir: @Dir :: %stay
+	if(shuffleMode)
+		do dir :: lib@rnd(1, 4) $ @Dir
+	else
+		if(input@pad(0, %left) % 15 = 1)
+			do dir :: %left
+		elif(input@pad(0, %right) % 15 = 1)
+			do dir :: %right
+		elif(input@pad(0, %up) % 15 = 1)
+			do dir :: %up
+		elif(input@pad(0, %down) % 15 = 1)
+			do dir :: %down
+		end if
+	end if
+	
+	var id: int :: -1
+	switch(dir)
+	case (%left)
+		if(@voidPiece.posId % 4 <> 3)
+			do id :: @findPieceID(@voidPiece.posId + 1)
+		end if
+	case (%right)
+		if(@voidPiece.posId % 4 <> 0)
+			do id :: @findPieceID(@voidPiece.posId - 1)
+		end if
+	case (%up)
+		if(@voidPiece.posId / 4 <> 3)
+			do id :: @findPieceID(@voidPiece.posId + 4)
+		end if
+	case (%down)
+		if(@voidPiece.posId / 4 <> 0)
+			do id :: @findPieceID(@voidPiece.posId - 4)
+		end if
+	end switch
+	
+	if(id <> -1)
+		do @pieces[id].dir :: dir
+		var tmp: int :: @voidPiece.posId
+		do @voidPiece.posId :: @pieces[id].posId
+		do @pieces[id].posId :: tmp
+		if(shuffleMode)
+			do @pieces[id].move(@pieceSize)
+		end if
+	end if
+end func
+
+enum Dir
+	stay
+	left :: 1
+	right :: 2
+	up :: 3
+	down :: 4
+end enum
+
+func shufflePieces()
+	for i(1, @shuffleNum)
+		do @setDirection(true)
+	end for
+end func
+
+func checkComplete(): bool
+	for i(0, ^@pieces - 1)
+		var p: @Piece :: @pieces[i]
+		if(p.getId() <> p.posId)
+			ret false
+		end if
+	end for
+	ret true
+end func
+
+{駒の位置情報を元にその駒のidを返します}
+func findPieceID(posId: int): int
+	for i(0, ^@pieces - 1)
+		var p: @Piece :: @pieces[i]
+		if(p.posId = posId)
+			ret p.getId()
+		end if
+	end for
+	assert false
+end func
